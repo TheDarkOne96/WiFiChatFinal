@@ -27,8 +27,10 @@ import android.net.wifi.p2p.WifiP2pManager.ActionListener;
 import android.net.wifi.p2p.WifiP2pManager.Channel;
 import android.net.wifi.p2p.WifiP2pManager.ChannelListener;
 import android.os.Bundle;
+import android.os.StrictMode;
 import android.provider.Settings;
 import android.support.v4.app.Fragment;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
@@ -36,15 +38,20 @@ import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Switch;
 import android.widget.Toast;
 
-import com.google.android.gms.ads.AdRequest;
-import com.google.android.gms.ads.AdView;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.List;
 
 import anuj.wifidirect.R;
 import anuj.wifidirect.utils.PermissionsAndroid;
+import anuj.wifidirect.utils.Utils;
+import anuj.wifidirect.utils.SharedPreferencesHandler;
 
 /**
  * An activity that uses WiFi Direct APIs to discover and connect with available
@@ -66,6 +73,8 @@ public class WiFiDirectActivity extends AppCompatActivity implements ChannelList
     private Channel channel;
     private BroadcastReceiver receiver = null;
 
+    protected String personID, personMajor, personStatus;
+
     /**
      * @param isWifiP2pEnabled the isWifiP2pEnabled to set
      */
@@ -77,12 +86,21 @@ public class WiFiDirectActivity extends AppCompatActivity implements ChannelList
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
+        showEditDialog();
         initViews();
-        AdView mAdView = (AdView) findViewById(R.id.adView);
-        AdRequest adRequest = new AdRequest.Builder().build();
-        mAdView.loadAd(adRequest);
-
         checkStoragePermission();
+       // SharedPreferencesHandler.setStringValues(getApplicationContext(),);
+
+        //Fix for crash, where higher SDK crashes when trying to connect to phone with lower SDK (for some reason)
+        if (android.os.Build.VERSION.SDK_INT > 9)
+        {
+            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+            StrictMode.setThreadPolicy(policy);
+        }
+
+        // Code below is fetched from https://stackoverflow.com/questions/24851961/how-change-the-device-name-in-wifi-direct-p2p
+        // This is used to modify Default name for the device to what is desired by the application developer
+
     }
 
     /*
@@ -195,7 +213,11 @@ public class WiFiDirectActivity extends AppCompatActivity implements ChannelList
                     }
                 });
                 return true;
-            default:
+            case R.id.atn_direct_edit:
+                showEditDialog();
+                return true;
+
+                default:
                 return super.onOptionsItemSelected(item);
         }
     }
@@ -296,6 +318,83 @@ public class WiFiDirectActivity extends AppCompatActivity implements ChannelList
             }
         }
 
+    }
+    public void showEditDialog(){
+        AlertDialog.Builder mBuilder = new AlertDialog.Builder(WiFiDirectActivity.this);
+        View mView = getLayoutInflater().inflate(R.layout.dialog_edit,null);
+        final EditText resultID = (EditText) mView.findViewById(R.id.ID_value);
+        final EditText resultMajor = (EditText) mView.findViewById(R.id.Major_value);
+        final Switch resultState = (Switch) mView.findViewById(R.id.statebtn);
+        Button resultSave = (Button) mView.findViewById(R.id.savebtn);
+
+        mBuilder.setView(mView);
+        final AlertDialog dialog = mBuilder.create();
+        dialog.show();
+
+        resultSave.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(!resultID.getText().toString().isEmpty() && !resultMajor.getText().toString().isEmpty()){
+                    personID = resultID.getText().toString();
+                    personMajor = resultMajor.getText().toString();
+                    if(resultState.isChecked()){
+                        personStatus = "Busy";
+                    }
+                    else personStatus="Available";
+                    Utils.getInstance().showToast("Settings has been saved");
+                    setInfo(personID,personMajor,personStatus);
+                    resetData();
+                    dialog.dismiss();
+                }
+                else dialog.dismiss();
+            }
+        });
+    }
+
+    public void setInfo(String ID, String Major, String state){
+        try {
+            manager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
+            channel = manager.initialize(this, getMainLooper(), new WifiP2pManager.ChannelListener() {
+                @Override
+                public void onChannelDisconnected() {
+                    manager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
+                }
+            });
+            Class[] paramTypes = new Class[3];
+            paramTypes[0] = WifiP2pManager.Channel.class;
+            paramTypes[1] = String.class;
+            paramTypes[2] = WifiP2pManager.ActionListener.class;
+            Method setDeviceName = manager.getClass().getMethod(
+                    "setDeviceName", paramTypes);
+            setDeviceName.setAccessible(true);
+
+            Object arglist[] = new Object[3];
+            arglist[0] = channel;
+            // Here we add the modified name for the device
+            arglist[1] = ID + " - " + Major + " - " + state;
+            arglist[2] = new WifiP2pManager.ActionListener() {
+
+                @Override
+                public void onSuccess() {
+                    Log.d("setDeviceName succeeded", "true");
+                }
+
+                @Override
+                public void onFailure(int reason) {
+                    Log.d("setDeviceName failed", "true");
+                }
+            };
+            setDeviceName.invoke(manager, arglist);
+
+        } catch (NoSuchMethodException e) {
+            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            e.printStackTrace();
+        } catch (IllegalArgumentException e) {
+            e.printStackTrace();
+        } catch (InvocationTargetException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override

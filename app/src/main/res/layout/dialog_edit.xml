@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:id="@+id/enterIDview"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="25sp"
+        android:textStyle="bold"
+        android:layout_marginTop="5dp"
+        android:text="@string/enter_id" />
+
+    <EditText
+        android:id="@+id/ID_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ems="9"
+        android:inputType="number" />
+
+    <TextView
+        android:id="@+id/enterMajorview"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="25sp"
+        android:textStyle="bold"
+        android:layout_marginTop="5dp"
+        android:text="@string/please_enter_you_major" />
+
+    <EditText
+        android:id="@+id/Major_value"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ems="10"
+        android:inputType="textPersonName"
+        android:text="Name" />
+
+    <Switch
+        android:id="@+id/statebtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="25sp"
+        android:textStyle="bold"
+        android:layout_marginTop="5dp"
+        android:text="Busy" />
+
+    <Button
+        android:id="@+id/savebtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/save" />
+
+
+</LinearLayout>

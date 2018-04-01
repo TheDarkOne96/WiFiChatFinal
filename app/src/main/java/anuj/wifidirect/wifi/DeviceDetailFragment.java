@@ -31,6 +31,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
+import android.os.Message;
 import android.support.annotation.Nullable;
 import android.support.v4.content.FileProvider;
 import android.text.TextUtils;
@@ -40,9 +41,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import com.google.android.gms.ads.AdListener;
-import com.google.android.gms.ads.AdRequest;
-import com.google.android.gms.ads.InterstitialAd;
+
 import com.kbeanie.multipicker.api.FilePicker;
 import com.kbeanie.multipicker.api.Picker;
 import com.kbeanie.multipicker.api.callbacks.FilePickerCallback;
@@ -67,14 +66,15 @@ import anuj.wifidirect.utils.Utils;
 import anuj.wifidirect.wifi.DeviceListFragment.DeviceActionListener;
 
 import static anuj.wifidirect.utils.PermissionsAndroid.WRITE_EXTERNAL_STORAGE_PERMISSION_REQUEST_CODE;
+import static anuj.wifidirect.wifi.WiFiDirectActivity.TAG;
 
 /**
  * A fragment that manages a particular peer and allows interaction with device
  * i.e. setting up network connection and transferring data.
  */
-public class DeviceDetailFragment extends android.support.v4.app.Fragment implements ConnectionInfoListener, FilePickerCallback {
+public class DeviceDetailFragment extends android.support.v4.app.Fragment implements ConnectionInfoListener, FilePickerCallback, Handler.Callback, WiFiChatFragment.MessageTarget {
 
-    static InterstitialAd mInterstitialAd;
+
 
     protected static final int CHOOSE_FILE_RESULT_CODE = 20;
     private View mContentView = null;
@@ -95,6 +95,16 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
     private FilePicker filePicker;
     private String pickerPath;
 
+    static final int SERVER_PORT = 4545;
+    public static final int MESSAGE_READ = 0x400 + 1;
+    public static final int MY_HANDLE = 0x400 + 2;
+    private WiFiChatFragment chatFragment;
+    private Handler handler = new Handler(this);
+    public Handler getHandler() {
+        return handler;
+    }
+
+
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
         super.onActivityCreated(savedInstanceState);
@@ -114,17 +124,6 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
 
         mContentView = inflater.inflate(R.layout.device_detail, null);
-
-        mInterstitialAd = new InterstitialAd(getActivity());
-        mInterstitialAd.setAdUnitId(getString(R.string.fullscreen_ad_unit_id));
-        mInterstitialAd.setAdListener(new AdListener() {
-            @Override
-            public void onAdClosed() {
-                requestNewInterstitial();
-            }
-        });
-
-        requestNewInterstitial();
 
         mContentView.findViewById(R.id.btn_connect).setOnClickListener(new View.OnClickListener() {
 
@@ -152,6 +151,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
 
                     @Override
                     public void onClick(View v) {
+                        getFragmentManager().beginTransaction().hide(chatFragment).commit();
                         ((DeviceActionListener) getActivity()).disconnect();
                     }
                 });
@@ -167,13 +167,6 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
                 });
 
         return mContentView;
-    }
-
-    private void requestNewInterstitial() {
-        AdRequest adRequest = new AdRequest.Builder()
-                .build();
-
-        mInterstitialAd.loadAd(adRequest);
     }
 
     private void checkExternalStoragePermission() {
@@ -225,6 +218,8 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
 
     @Override
     public void onConnectionInfoAvailable(final WifiP2pInfo info) {
+        Thread handler = null;
+
         if (progressDialog != null && progressDialog.isShowing()) {
             progressDialog.dismiss();
         }
@@ -278,6 +273,9 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
                     } else
                         FileServerobj.execute();
                 }
+                handler = new GroupOwnerSocketHandler(
+                        ((WiFiChatFragment.MessageTarget) this).getHandler());
+                handler.start();
             } else {
                 // The other device acts as the client. In this case, we enable the
                 // get file button.
@@ -305,11 +303,36 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
                         FileServerobj.execute();
 
                 }
-
+                handler = new ClientSocketHandler(
+                        ((WiFiChatFragment.MessageTarget) this).getHandler(),
+                        info.groupOwnerAddress);
+                handler.start();
             }
         } catch (Exception e) {
 
         }
+
+        chatFragment = new WiFiChatFragment();
+        getFragmentManager().beginTransaction().replace(R.id.frag_chat, chatFragment).commit();
+    }
+
+    @Override
+    public boolean handleMessage(Message msg) {
+        switch (msg.what) {
+            case MESSAGE_READ:
+                byte[] readBuf = (byte[]) msg.obj;
+                // construct a string from the valid bytes in the buffer
+                String readMessage = new String(readBuf, 0, msg.arg1);
+                Log.d(TAG, readMessage);
+                (chatFragment).pushMessage("Buddy: " + readMessage);
+                break;
+
+            case MY_HANDLE:
+                Object obj = msg.obj;
+                (chatFragment).setChatManager((ChatManager) obj);
+
+        }
+        return true;
     }
 
 
@@ -359,7 +382,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
      * A simple server socket that accepts connection and writes some data on
      * the stream.
      */
-    static Handler handler;
+    static Handler mhandler;
 
     @Override
     public void onFilesChosen(List<ChosenFile> list) {
@@ -450,7 +473,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
          */
         public FileServerAsyncTask(Context context, int port) {
             this.mFilecontext = context;
-            handler = new Handler();
+            mhandler = new Handler();
             this.PORT = port;
             if (mProgressDialog == null)
                 mProgressDialog = new ProgressDialog(mFilecontext,
@@ -520,7 +543,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
                                 mProgressDialog.show();
                             }
                         };
-                        handler.post(r);
+                        mhandler.post(r);
                         Utils.d("FileName got from socket on other side->>> ",
                                 obj.getFileName());
                     }
@@ -565,7 +588,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
 
                 return "";
             } catch (IOException e) {
-                Log.e(WiFiDirectActivity.TAG, e.getMessage());
+                Log.e(TAG, e.getMessage());
                 return null;
             }
         }
@@ -578,9 +601,6 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
         protected void onPostExecute(String result) {
             if (result != null) {
                 if (!result.equalsIgnoreCase("Demo")) {
-                    if (mInterstitialAd.isLoaded()) {
-                        mInterstitialAd.show();
-                    }
                     openFile(result, mFilecontext);
                 } else if (!TextUtils.isEmpty(result)) {
                     /*
@@ -704,7 +724,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
             out.close();
             inputStream.close();
         } catch (IOException e) {
-            Log.d(WiFiDirectActivity.TAG, e.toString());
+            Log.d(TAG, e.toString());
             return false;
         }
         return true;
@@ -752,7 +772,7 @@ public class DeviceDetailFragment extends android.support.v4.app.Fragment implem
             out.close();
             inputStream.close();
         } catch (IOException e) {
-            Log.d(WiFiDirectActivity.TAG, e.toString());
+            Log.d(TAG, e.toString());
             return false;
         }
         return true;

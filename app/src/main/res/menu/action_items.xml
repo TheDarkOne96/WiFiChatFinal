@@ -12,4 +12,9 @@
         android:icon="@drawable/ic_action_discover"
         android:title="@string/discover_peers_button"
         android:showAsAction="always" />
+    <item
+        android:id="@+id/atn_direct_edit"
+        android:icon="@drawable/ic_action_discover"
+        android:title="@string/edit_info_button"
+        android:showAsAction="always" />
 </menu>
